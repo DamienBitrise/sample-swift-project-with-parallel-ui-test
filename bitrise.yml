@@ -9,7 +9,7 @@ app:
 meta:
   bitrise.io:
     stack: osx-xcode-13.4.x
-    machine_type_id: g2.4core
+    machine_type_id: g2.8core
 pipelines:
   run_tests_on_simulators:
     stages:
@@ -54,6 +54,8 @@ workflows:
     - xcode-test-without-building:
         inputs:
         - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
+        - xcodebuild_options: "-parallel-testing-enabled YES -maximum-parallel-testing-workers
+            3"
         - destination: platform=iOS Simulator,name=iPad (9th generation)
   run_tests_iPhone:
     before_run:
@@ -62,6 +64,8 @@ workflows:
     - xcode-test-without-building:
         inputs:
         - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
+        - xcodebuild_options: "-parallel-testing-enabled YES -maximum-parallel-testing-workers
+            3"
         - destination: platform=iOS Simulator,name=iPhone 12 Pro Max
   run_tests_iPod:
     before_run:
@@ -70,4 +74,6 @@ workflows:
     - xcode-test-without-building:
         inputs:
         - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
+        - xcodebuild_options: "-parallel-testing-enabled YES -maximum-parallel-testing-workers
+            3"
         - destination: platform=iOS Simulator,name=iPod touch (7th generation)
