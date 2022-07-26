@@ -1,0 +1,73 @@
+---
+format_version: '11'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: ios
+app:
+  envs:
+  - BITRISE_PROJECT_PATH: BullsEye.xcworkspace
+  - BITRISE_SCHEME: BullsEye
+meta:
+  bitrise.io:
+    stack: osx-xcode-13.4.x
+    machine_type_id: g2.4core
+pipelines:
+  run_tests_on_simulators:
+    stages:
+    - build_tests: {}
+    - run_tests_on_simulators: {}
+stages:
+  build_tests:
+    workflows:
+    - build_tests: {}
+  run_tests_on_simulators:
+    workflows:
+    - run_tests_iPhone: {}
+    - run_tests_iPad: {}
+    - run_tests_iPod: {}
+workflows:
+  _pull_test_bundle:
+    steps:
+    - git::https://github.com/bitrise-steplib/bitrise-step-artifact-pull.git@main:
+        inputs:
+        - export_map: 'BITRISE_TEST_BUNDLE_ZIP_PATH: .*\.zip'
+        - artifact_sources: build_tests.build_tests.*
+    - script:
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -e
+            set -o pipefail
+            unzip "$BITRISE_TEST_BUNDLE_ZIP_PATH" -d "./test_bundle"
+            envman add --key "BITRISE_XCTESTRUN_FILE_PATH" --value "./test_bundle/BullsEye_FullTests_iphonesimulator15.5-arm64-x86_64.xctestrun"
+        title: Unzip Derived Data
+  build_tests:
+    steps:
+    - git-clone: {}
+    - xcode-build-for-test:
+        inputs:
+        - destination: generic/platform=iOS Simulator
+    - deploy-to-bitrise-io: {}
+  run_tests_iPad:
+    before_run:
+    - _pull_test_bundle
+    steps:
+    - xcode-test-without-building:
+        inputs:
+        - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
+        - destination: platform=iOS Simulator,name=iPad (9th generation)
+  run_tests_iPhone:
+    before_run:
+    - _pull_test_bundle
+    steps:
+    - xcode-test-without-building:
+        inputs:
+        - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
+        - destination: platform=iOS Simulator,name=iPhone 12 Pro Max
+  run_tests_iPod:
+    before_run:
+    - _pull_test_bundle
+    steps:
+    - xcode-test-without-building:
+        inputs:
+        - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
+        - destination: platform=iOS Simulator,name=iPod touch (7th generation)
