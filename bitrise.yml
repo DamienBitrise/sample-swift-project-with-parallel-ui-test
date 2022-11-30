@@ -15,6 +15,7 @@ pipelines:
     stages:
     - build_tests: {}
     - run_tests_on_simulators: {}
+    - deploy_test_results: {}
 stages:
   build_tests:
     workflows:
@@ -24,56 +25,202 @@ stages:
     - run_tests_iPhone: {}
     - run_tests_iPad: {}
     - run_tests_iPod: {}
+  deploy_test_results:
+    workflows:
+    - deploy_test_results: {}
 workflows:
+  _deploy_artifacts:
+    steps:
+    - deploy-to-bitrise-io@2:
+        inputs:
+        - pipeline_intermediate_files: "$BITRISE_TEST_BUNDLE_ZIP_PATH:BITRISE_TEST_BUNDLE_PATH"
   _pull_test_bundle:
     steps:
-    - git::https://github.com/bitrise-steplib/bitrise-step-artifact-pull.git@main:
+    - pull-intermediate-files@1:
         inputs:
-        - export_map: 'BITRISE_TEST_BUNDLE_ZIP_PATH: .*\.zip'
-        - artifact_sources: build_tests.build_tests.*
-    - script:
-        inputs:
-        - content: |-
-            #!/usr/bin/env bash
-            set -e
-            set -o pipefail
-            unzip "$BITRISE_TEST_BUNDLE_ZIP_PATH" -d "./test_bundle"
-            envman add --key "BITRISE_XCTESTRUN_FILE_PATH" --value "./test_bundle/BullsEye_FullTests_iphonesimulator15.5-arm64-x86_64.xctestrun"
-        title: Unzip Derived Data
+        - verbose: 'true'
   build_tests:
     steps:
     - git-clone: {}
     - xcode-build-for-test:
         inputs:
         - destination: generic/platform=iOS Simulator
-    - deploy-to-bitrise-io: {}
+    after_run:
+    - _deploy_artifacts
+  debug:
+    steps:
+    - script@1:
+        inputs:
+        - content: |
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # make pipelines' return status equal the last command to exit with a non-zero status, or zero if all commands exit successfully
+            set -o pipefail
+            # debug log
+            set -x
+
+            # what is my current directory
+            pwd
+
+            cd $BITRISE_DEPLOY_DIR
+
+            # what is the folder in my current dir
+            ls -la
+
+            # print all env vars
+            printenv | grep "BITRISE"
+  deploy_test_results:
+    steps:
+    - pull-intermediate-files@1:
+        inputs:
+        - verbose: 'true'
+        - artifact_sources: run_tests_*
+    - script:
+        inputs:
+        - content: |
+            #!/usr/bin/env bash
+            set -ex
+            set -o pipefail
+
+            testing_addon_test_dir="${BITRISE_TEST_RESULT_DIR}/test_1"
+            unzip "$IPAD_TEST_RESULT" -d $testing_addon_test_dir
+            test_info="${testing_addon_test_dir}/test-info.json"
+            echo "{ \"test-name\": \"iPhone\" }" > "$test_info"
+
+            testing_addon_test_dir="${BITRISE_TEST_RESULT_DIR}/test_2"
+            unzip "$IPAD_TEST_RESULT" -d $testing_addon_test_dir
+            test_info="${testing_addon_test_dir}/test-info.json"
+            echo "{ \"test-name\": \"iPad\" }" > "$test_info"
+
+            testing_addon_test_dir="${BITRISE_TEST_RESULT_DIR}/test_3"
+            unzip "$IPAD_TEST_RESULT" -d $testing_addon_test_dir
+            test_info="${testing_addon_test_dir}/test-info.json"
+            echo "{ \"test-name\": \"iPod\" }" > "$test_info"
+        title: Populate Test Reports
+    - deploy-to-bitrise-io@2: {}
+    after_run: []
+  run_from_repo:
+    steps:
+    - activate-ssh-key@4: {}
+    - git-clone@6: {}
+    - bitrise-run@0: {}
   run_tests_iPad:
     before_run:
     - _pull_test_bundle
     steps:
+    - script@1:
+        inputs:
+        - content: |+
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # make pipelines' return status equal the last command to exit with a non-zero status, or zero if all commands exit successfully
+            set -o pipefail
+            # debug log
+            set -x
+
+            ls -la $BITRISE_TEST_BUNDLE_PATH
+
+            unzip "$BITRISE_TEST_BUNDLE_PATH" -d "./test_bundle"
+            envman add --key "BITRISE_XCTESTRUN_FILE_PATH" --value "./test_bundle/BullsEye_FullTests_iphonesimulator15.5-arm64-x86_64.xctestrun"
+
     - xcode-test-without-building:
         inputs:
-        - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
         - xcodebuild_options: "-parallel-testing-enabled YES -maximum-parallel-testing-workers
-            3"
+            2"
         - destination: platform=iOS Simulator,name=iPad (9th generation)
+    - script@1:
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -ex
+            set -o pipefail
+
+            mv $BITRISE_XCRESULT_ZIP_PATH $BITRISE_DEPLOY_DIR/iPad.xcresult.zip
+        title: Rename Test Results
+    - deploy-to-bitrise-io@2:
+        inputs:
+        - pipeline_intermediate_files: "$BITRISE_DEPLOY_DIR/iPad.xcresult.zip:IPAD_TEST_RESULT"
+    after_run: []
   run_tests_iPhone:
     before_run:
     - _pull_test_bundle
     steps:
+    - script@1:
+        inputs:
+        - content: |+
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # make pipelines' return status equal the last command to exit with a non-zero status, or zero if all commands exit successfully
+            set -o pipefail
+            # debug log
+            set -x
+
+            ls -la $BITRISE_TEST_BUNDLE_PATH
+
+            unzip "$BITRISE_TEST_BUNDLE_PATH" -d "./test_bundle"
+            envman add --key "BITRISE_XCTESTRUN_FILE_PATH" --value "./test_bundle/BullsEye_FullTests_iphonesimulator15.5-arm64-x86_64.xctestrun"
+
     - xcode-test-without-building:
         inputs:
-        - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
-        - xcodebuild_options: "-parallel-testing-enabled YES -maximum-parallel-testing-workers
-            3"
+        - xcodebuild_options: "-parallel-testing-enabled NO -maximum-parallel-testing-workers
+            1"
         - destination: platform=iOS Simulator,name=iPhone 12 Pro Max
+    - deploy-to-bitrise-io@2:
+        inputs:
+        - pipeline_intermediate_files: "$BITRISE_XCRESULT_ZIP_PATH:IPHONE_TEST_XCRESULTS"
+    after_run: []
+    envs:
+    - opts:
+        is_expand: false
+      CUSTOMER: abc
   run_tests_iPod:
     before_run:
     - _pull_test_bundle
     steps:
+    - script@1:
+        inputs:
+        - content: |+
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -e
+            # make pipelines' return status equal the last command to exit with a non-zero status, or zero if all commands exit successfully
+            set -o pipefail
+            # debug log
+            set -x
+
+            ls -la $BITRISE_TEST_BUNDLE_PATH
+
+            unzip "$BITRISE_TEST_BUNDLE_PATH" -d "./test_bundle"
+            envman add --key "BITRISE_XCTESTRUN_FILE_PATH" --value "./test_bundle/BullsEye_FullTests_iphonesimulator15.5-arm64-x86_64.xctestrun"
+
     - xcode-test-without-building:
         inputs:
-        - xctestrun: "$BITRISE_XCTESTRUN_FILE_PATH"
         - xcodebuild_options: "-parallel-testing-enabled YES -maximum-parallel-testing-workers
-            3"
+            2"
         - destination: platform=iOS Simulator,name=iPod touch (7th generation)
+    - script@1:
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            # fail if any commands fails
+            set -ex
+            set -o pipefail
+
+            mv $BITRISE_XCRESULT_ZIP_PATH $BITRISE_DEPLOY_DIR/iPod.xcresult.zip
+        title: Rename Test Results
+    - deploy-to-bitrise-io@2:
+        inputs:
+        - pipeline_intermediate_files: "$BITRISE_DEPLOY_DIR/iPod.xcresult.zip:IPOD_TEST_RESULT"
+    after_run: []
+  x:
+    steps:
+    - activate-ssh-key@4: {}
+    - git-clone@6: {}
+    - bitrise-run@0: {}
+trigger_map:
+- push_branch: "*"
+  workflow: x
